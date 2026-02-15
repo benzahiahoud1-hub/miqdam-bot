@@ -18,7 +18,7 @@ SHEET_URL = os.environ.get("SHEET_URL")
 # إعداد Gemini
 if GOOGLE_KEY:
     genai.configure(api_key=GOOGLE_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-pro')
 else:
     print("❌ تحذير: مفتاح جوجل غير موجود في إعدادات السيرفر!")
 
