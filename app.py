@@ -30,8 +30,8 @@ ENTRY_PHONE = os.environ.get("ENTRY_PHONE")
 if GOOGLE_KEY:
     genai.configure(api_key=GOOGLE_KEY)
     # هنا نستخدم النسخة المستقرة 1.5 لمنع الأخطاء
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    print("✅ تم تثبيت الموديل المستقر: gemini-1.5-flash")
+    model = genai.GenerativeModel('gemini-2.5-pro')
+    print("✅ تم تثبيت الموديل المستقر: gemini-2.5-pro")
 else:
     print("❌ خطأ: مفتاح جوجل مفقود")
 
