@@ -8,55 +8,79 @@ import traceback
 
 app = Flask(__name__)
 
-# --- جلب المفاتيح من إعدادات السيرفر (Render) ---
-# ملاحظة: يجب أن تضيف هذه الأسماء والقيم في صفحة Environment Variables في Render
+# --- إعدادات الصفحة الرئيسية ---
+@app.route('/')
+def home():
+    return "Miqdam Bot is Running Successfully!", 200
+
+# --- جلب المفاتيح ---
 GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")
 SHEET_URL = os.environ.get("SHEET_URL")
 
-# إعداد Gemini
+# --- الإعداد الذكي للموديل (Auto-Select) ---
 if GOOGLE_KEY:
     genai.configure(api_key=GOOGLE_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+    try:
+        # نسأل جوجل عن الموديلات المتوفرة
+        print("🔍 جاري البحث عن موديل مناسب...")
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        print(f"📋 الموديلات المتاحة: {available_models}")
+        
+        # نختار الأفضل حسب المتوفر
+        if 'models/gemini-1.5-flash' in available_models:
+            model_name = 'gemini-1.5-flash'
+        elif 'models/gemini-pro' in available_models:
+            model_name = 'gemini-pro'
+        elif available_models:
+            # نختار أول واحد نجده إذا لم نجد المفضلين
+            model_name = available_models[0].replace('models/', '')
+        else:
+            model_name = 'gemini-1.5-flash' # محاولة أخيرة
+            
+        print(f"✅ تم اختيار الموديل: {model_name}")
+        model = genai.GenerativeModel(model_name)
+    except Exception as e:
+        print(f"⚠️ خطأ في اختيار الموديل: {e}")
+        # احتياطياً نستخدم فلاش
+        model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    print("❌ تحذير: مفتاح جوجل غير موجود في إعدادات السيرفر!")
+    print("❌ خطأ: مفتاح جوجل غير موجود في المتغيرات!")
 
 def get_inventory():
     try:
         if not SHEET_URL:
-            return "رابط المخزون غير موجود."
+            return "رابط المخزون مفقود."
         response = requests.get(SHEET_URL)
         df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
         df['Image URL'] = df['Image URL'].fillna('')
-        text = "المخزون المتوفر:\n"
+        text = "المخزون:\n"
         for _, row in df.iterrows():
-            # استخدام .get لتجنب الأخطاء
             p_name = row.get('Product Name', row.iloc[0]) 
             p_price = row.get('Price Description', row.iloc[1])
             p_stock = row.get('Stock Status', row.iloc[2])
             text += f"- {p_name} | {p_price} | {p_stock}\n"
         return text
     except:
-        traceback.print_exc()
         return "المخزون قيد التحديث."
 
 def ask_gemini(user_text):
     if not GOOGLE_KEY:
-        return "خطأ: مفتاح جوجل مفقود."
+        return "خطأ في النظام (المفتاح مفقود)."
         
     inventory = get_inventory()
     prompt = f"""
-    أنت 'أمين'، بائع في 'ورشة المقدام'. مهمتك البيع والرد بلهجة جزائرية.
-    المخزون الحالي: {inventory}
-    رسالة الزبون: {user_text}
+    أنت 'أمين'، بائع في 'ورشة المقدام'. لهجتك جزائرية.
+    المخزون: {inventory}
+    الزبون: {user_text}
     """
     try:
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        print(f"Error: {e}")
-        return "اسمحلي خويا، كاين ضغط على الشبكة."
+        print(f"❌ Error Generating: {e}")
+        return "اسمحلي خويا، كاين ضغط، عاود ابعثلي."
 
 def send_fb_message(recipient_id, text):
     url = f"https://graph.facebook.com/v18.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
@@ -65,13 +89,11 @@ def send_fb_message(recipient_id, text):
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
-    # التحقق من فيسبوك
     if request.method == 'GET':
         if request.args.get("hub.verify_token") == VERIFY_TOKEN:
             return request.args.get("hub.challenge")
         return "Verification Failed", 403
 
-    # استقبال الرسائل
     if request.method == 'POST':
         try:
             data = request.json
@@ -81,11 +103,10 @@ def webhook():
                         if 'message' in event and 'text' in event['message']:
                             sid = event['sender']['id']
                             msg = event['message']['text']
-                            
                             reply = ask_gemini(msg)
                             send_fb_message(sid, reply)
             return "ok", 200
-        except Exception as e:
+        except:
             traceback.print_exc()
             return "ok", 200
 
