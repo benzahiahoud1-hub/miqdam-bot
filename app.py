@@ -9,7 +9,7 @@ import traceback
 app = Flask(__name__)
 
 # --- جلب المفاتيح من إعدادات السيرفر (Render) ---
-# لا نضع المفاتيح هنا مباشرة للحماية
+# ملاحظة: يجب أن تضيف هذه الأسماء والقيم في صفحة Environment Variables في Render
 GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")
@@ -19,6 +19,8 @@ SHEET_URL = os.environ.get("SHEET_URL")
 if GOOGLE_KEY:
     genai.configure(api_key=GOOGLE_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    print("❌ تحذير: مفتاح جوجل غير موجود في إعدادات السيرفر!")
 
 def get_inventory():
     try:
@@ -29,7 +31,7 @@ def get_inventory():
         df['Image URL'] = df['Image URL'].fillna('')
         text = "المخزون المتوفر:\n"
         for _, row in df.iterrows():
-            # استخدام .get لتجنب الأخطاء إذا تغيرت أسماء الأعمدة
+            # استخدام .get لتجنب الأخطاء
             p_name = row.get('Product Name', row.iloc[0]) 
             p_price = row.get('Price Description', row.iloc[1])
             p_stock = row.get('Stock Status', row.iloc[2])
@@ -41,7 +43,7 @@ def get_inventory():
 
 def ask_gemini(user_text):
     if not GOOGLE_KEY:
-        return "خطأ: مفتاح جوجل غير موجود في السيرفر."
+        return "خطأ: مفتاح جوجل مفقود."
         
     inventory = get_inventory()
     prompt = f"""
@@ -80,7 +82,6 @@ def webhook():
                             sid = event['sender']['id']
                             msg = event['message']['text']
                             
-                            # الرد
                             reply = ask_gemini(msg)
                             send_fb_message(sid, reply)
             return "ok", 200
