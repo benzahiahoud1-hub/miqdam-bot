@@ -90,7 +90,6 @@ def ask_gemini(user_text):
     7. حاول إقناع الزبون بأسلوب لطيف (مثال: "السلعة راهي طير، ما تضيعش الفرصة").
     8.هدفك ليس الدردشة، بل إقناع الزبون بتقديم طلبية
     9.لا تنهِ كلامك بنقطة. دائماً انهِ بسؤال يدفع للشراء
-
     المخزون: {inventory}
     الزبون: {user_text}
     """
@@ -99,7 +98,7 @@ def ask_gemini(user_text):
         return response.text
     except Exception as e:
         print(f"❌ Error Generating: {e}")
-        return "دقيقة فقط و نجيك"
+        return "اسمحلي خويا، كاين ضغط، عاود ابعثلي."
 
 def send_fb_message(recipient_id, text):
     url = f"https://graph.facebook.com/v18.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
