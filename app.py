@@ -2,117 +2,119 @@ import os
 import pandas as pd
 from flask import Flask, request
 import requests
-from groq import Groq
+from openai import OpenAI # نستخدم مكتبة OpenAI للاتصال بـ DeepSeek
 import io
 import traceback
 
 app = Flask(__name__)
 
-# --- التحقق من عمل السيرفر ---
+# --- الصفحة الرئيسية ---
 @app.route('/')
 def home():
-    return "✅ Miqdam Bot is Running on Port 10000!", 200
+    return "✅ Miqdam Bot (DeepSeek Edition) is Running!", 200
 
 # --- المتغيرات ---
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# تأكد من تسمية المتغير في Render بـ DEEPSEEK_API_KEY
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")
 SHEET_URL = os.environ.get("SHEET_URL")
 
-# --- إعداد Groq (بشكل آمن) ---
+# --- إعداد DeepSeek ---
 client = None
-if GROQ_API_KEY:
+if DEEPSEEK_API_KEY:
     try:
-        client = Groq(api_key=GROQ_API_KEY)
-        print("✅ Groq Connected Successfully")
+        # DeepSeek يستخدم نفس بروتوكول OpenAI
+        client = OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com"
+        )
+        print("✅ DeepSeek Connected Successfully")
     except Exception as e:
-        print(f"❌ Error init Groq: {e}")
+        print(f"❌ Error init DeepSeek: {e}")
 else:
-    print("⚠️ Warning: GROQ_API_KEY is missing")
+    print("⚠️ Warning: DEEPSEEK_API_KEY is missing")
 
 def get_inventory():
     """جلب المخزون"""
     try:
         if not SHEET_URL:
             return "رابط الشيت مفقود."
-        
-        # استخدام timeout لتجنب توقف السيرفر اذا كان النت ضعيف
+
         response = requests.get(SHEET_URL, timeout=10)
         response.raise_for_status()
-        
+
         df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
-        df.fillna('', inplace=True) 
-        
+        df.fillna('', inplace=True)
+
         text = ""
         for _, row in df.iterrows():
-            # تأكد من ترتيب الأعمدة: الاسم، السعر، المخزون، رابط الصورة
             p_name = row.get('Product Name', row.iloc[0])
             p_price = row.get('Price', row.iloc[1])
             p_stock = row.get('Stock', row.iloc[2])
             p_img = row.get('Image URL', row.iloc[3])
-            
+
             text += f"المنتج: {p_name} | السعر: {p_price} | الحالة: {p_stock} | الرابط: {p_img}\n"
         return text
     except Exception as e:
         print(f"⚠️ Error reading sheet: {e}")
-        return "المخزون غير متوفر حالياً (صيانة)."
+        return "المخزون غير متوفر حالياً."
 
-def ask_groq(user_text):
+def ask_deepseek(user_text):
     if not client:
         return "السيرفر في حالة صيانة، دقيقة ونرجعو.", None
 
     inventory_data = get_inventory()
-    
-    # --- البرومبت الجزائري المحترف ---
+
+    # --- 🔴 برومبت DeepSeek المحترم (Polite V3) 🔴 ---
     system_instruction = f"""
-    أنت 'أمين'، مسير مبيعات في 'ورشة المقدام'.
-    
-    🛑 شخصيتك:
-    - تاجر جملة (Grossiste) محترف، ولد فاميليا، وكلامك "قح" (Pure Algerian).
-    - ممنوع الفصحى (No Standard Arabic). تكلم بالدارجة فقط.
-    
-    🛑 القاموس (Vocabulary):
-    - بدل "السعر هو" -> قل: "سومتها"، "نحسبوهالك بـ".
-    - بدل "مرحباً" -> قل: "واش خويا"، "السلام عليكم".
-    - بدل "حسناً/أجل" -> قل: "بيان سور"، "ما يكون لا خاطرك".
-    
-    🛑 القواعد:
-    1. بيع بالجملة فقط (Gros Only). ارفض التجزئة (Detail) بأدب: "الورشة تبيع غير السيري".
-    2. جاوب فقط على المنتج المطلوب.
-    3. إذا وجدت رابط صورة، ضعه في النهاية بعد كلمة IMAGE:.
-    
-    المخزون:
+    أنت 'أمين'، مسؤول المبيعات في 'ورشة المقدام'.
+
+    🎯 المهمة:
+    الرد على الزبائن بلهجة جزائرية (Algiers Dialect) غاية في الأدب والاحترام.
+
+    📜 القواعد الصارمة:
+    1. **الاحترام  :** عامِل الزبون بأدب. استخدم عبارات: "الله يحفظك"، "ربي يعيشك"، "مرحبا بيك".
+    2. **التواضع:** لا تكن جافاً. كن بشوشاً ولطيفاً جداً (Very friendly and humble).
+    3. **سياسة البيع:** نحن نبيع **بالجملة فقط**.
+       - إذا طلب "ديتاي" (تجزئة)، اعتذر منه بألطف طريقة ممكنة.
+       - مثال للرفض: "يا خويا العزيز، والله غير اسمحلنا، الورشة تخدم غير الجملة، ربي يبارك فيك."
+    4. **الصور:** إذا وجدت رابطاً للمنتج، ضعه في النهاية بعد كلمة IMAGE:.
+
+    📦 القائمة:
     {inventory_data}
     """
 
     try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        response = client.chat.completions.create(
+            model="deepseek-chat", # هذا هو الموديل الذكي والسريع
             messages=[
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": user_text}
             ],
-            temperature=0.3,
-            max_tokens=200,
+            temperature=1.1, # DeepSeek يحب حرارة أعلى قليلاً للإبداع
+            max_tokens=250,
+            stream=False
         )
-        full_response = completion.choices[0].message.content
-        
+
+        full_response = response.choices[0].message.content
+
         # استخراج الصورة
         image_url = None
         reply_text = full_response
-        
+
         if "IMAGE:" in full_response:
             parts = full_response.split("IMAGE:")
             reply_text = parts[0].strip()
             if len(parts) > 1:
                 potential_url = parts[1].strip()
                 if potential_url.startswith("http"):
-                    image_url = potential_url.split()[0] # أخذ الرابط الأول فقط
-        
+                    image_url = potential_url.split()[0]
+
         return reply_text, image_url
 
     except Exception as e:
-        print(f"❌ Groq Error: {e}")
+        print(f"❌ DeepSeek Error: {e}")
         return "اسمحلنا خويا، كاين ضغط، عاود ابعثلي.", None
 
 def send_fb_message(recipient_id, text):
@@ -129,16 +131,14 @@ def send_fb_image(recipient_id, image_url):
             "attachment": {
                 "type": "image",
                 "payload": {
-                    "url": image_url, 
+                    "url": image_url,
                     "is_reusable": True
                 }
             }
         }
     }
     try:
-        r = requests.post(url, json=payload)
-        if r.status_code != 200:
-            print(f"⚠️ FB Image Fail: {r.text}")
+        requests.post(url, json=payload)
     except Exception as e:
         print(f"⚠️ FB Image Error: {e}")
 
@@ -158,11 +158,11 @@ def webhook():
                         if 'message' in event and 'text' in event['message']:
                             sender_id = event['sender']['id']
                             user_msg = event['message']['text']
-                            
+
                             if event['message'].get('is_echo'):
                                 continue
-                            
-                            reply_text, reply_image = ask_groq(user_msg)
+
+                            reply_text, reply_image = ask_deepseek(user_msg)
                             send_fb_message(sender_id, reply_text)
                             if reply_image:
                                 send_fb_image(sender_id, reply_image)
@@ -171,9 +171,6 @@ def webhook():
             traceback.print_exc()
             return "ok", 200
 
-# --- 🔴 التعديل الحاسم لحل مشكلة Port Timeout 🔴 ---
 if __name__ == '__main__':
-    # الحصول على البورت من Render أو استخدام 10000 كاحتياط
     port = int(os.environ.get("PORT", 10000))
-    # host='0.0.0.0' ضروري جداً ليعمل على السيرفر
     app.run(host='0.0.0.0', port=port)
