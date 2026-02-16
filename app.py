@@ -2,97 +2,99 @@ import os
 import pandas as pd
 from flask import Flask, request
 import requests
-from groq import Groq  # استدعاء مكتبة Groq
+from groq import Groq
 import io
 import traceback
 
 app = Flask(__name__)
 
-# --- إعدادات الصفحة الرئيسية ---
+# --- الصفحة الرئيسية للتأكد من عمل السيرفر ---
 @app.route('/')
 def home():
-    return "✅ Miqdam Bot (Groq Edition) is Running!", 200
+    return "✅ Miqdam Bot (Llama 3.3 Edition) is Live!", 200
 
-# --- المتغيرات البيئية ---
-# تأكد من وضع مفتاح Groq هنا
+# --- جلب المفاتيح من متغيرات البيئة ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")
 SHEET_URL = os.environ.get("SHEET_URL")
 
 # --- إعداد عميل Groq ---
-if GROQ_API_KEY:
-    client = Groq(api_key=GROQ_API_KEY)
-    print("✅ تم الاتصال بـ Groq بنجاح")
-else:
-    print("❌ خطأ: مفتاح GROQ_API_KEY غير موجود!")
+try:
+    if GROQ_API_KEY:
+        client = Groq(api_key=GROQ_API_KEY)
+        print("✅ تم إعداد Groq Client بنجاح")
+    else:
+        client = None
+        print("❌ تحذير: مفتاح GROQ_API_KEY مفقود!")
+except Exception as e:
     client = None
+    print(f"❌ خطأ في إعداد Groq: {e}")
 
 def get_inventory():
-    """جلب المخزون من شيت جوجل"""
+    """جلب المخزون من شيت جوجل وتنسيقه للنص"""
     try:
         if not SHEET_URL:
-            return "رابط المخزون مفقود."
+            return "رابط المخزون غير موجود في الإعدادات."
+            
         response = requests.get(SHEET_URL)
-        response.raise_for_status() # التأكد من صحة الرابط
+        response.raise_for_status()
+        
+        # قراءة ملف CSV
         df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
         
-        # تنسيق النص ليفهمه الذكاء الاصطناعي بسهولة
-        text = "📦 قائمة المنتجات والمخزون الحالي:\n"
+        # تحويل البيانات إلى نص مفهوم للذكاء الاصطناعي
+        text = "📦 **قائمة المخزون الحالية:**\n"
         for _, row in df.iterrows():
-            # تأكد أن أسماء الأعمدة في الشيت مطابقة لهذه الأسماء أو عدلها هنا
+            # تأكد أن أسماء الأعمدة هنا تطابق ملفك (أو استخدم row.iloc[0] للأمان)
             p_name = row.get('Product Name', row.iloc[0]) 
-            p_price = row.get('Price', row.iloc[1]) # السعر
-            p_stock = row.get('Stock', row.iloc[2]) # الحالة (متوفر/غير متوفر)
-            text += f"- المنتج: {p_name} | السعر: {p_price} | الحالة: {p_stock}\n"
+            p_price = row.get('Price', row.iloc[1]) 
+            p_stock = row.get('Stock', row.iloc[2]) 
+            text += f"- {p_name} | السعر: {p_price} | الحالة: {p_stock}\n"
         return text
     except Exception as e:
-        print(f"⚠️ خطأ في جلب الشيت: {e}")
-        return "المخزون غير متاح حالياً، يرجى سؤال البائع مباشرة."
+        print(f"⚠️ خطأ في قراءة الشيت: {e}")
+        return "المخزون غير متاح حالياً."
 
 def ask_groq(user_text):
-    """دالة التحدث مع الذكاء الاصطناعي"""
+    """إرسال الرسالة إلى Groq Llama 3.3"""
     if not client:
-        return "نعتذر، الخدمة متوقفة مؤقتاً للصيانة."
+        return "نعتذر، الخدمة متوقفة مؤقتاً (خطأ في الإعدادات)."
         
-    inventory = get_inventory()
+    inventory_data = get_inventory()
     
-    # --- البرومبت (System Prompt) ---
-    # هنا نعطي الشخصية والتعليمات الصارمة للبوت
+    # --- تعليمات البوت (System Prompt) ---
     system_instruction = f"""
-    أنت 'أمين'، مسؤول المبيعات في 'ورشة المقدام' للخياطة والملابس الجاهزة في الجزائر.
+    أنت 'أمين'، البائع المحترف في 'ورشة المقدام'.
     
-    معلوماتك وتعليماتك الصارمة:
-    1. **اللهجة:** تكلم بلهجة جزائرية مهذبة ومختصرة (مثال: "مرحبا خويا"، "تفضلي أختي"، "الله يحفظك").
-    2. **طبيعة البيع:** الورشة تبيع **بالجملة فقط** (Wholesale).
-    3. **قاعدة الرفض:** إذا طلب الزبون "حبة" أو "ديتاي"، اعتذر منه بلباقة وقل: "اسمحلنا خويا/أختي، ورشة المقدام تخدم غير بالجملة (سيري كاملة)".
-    4. **الأسعار:** إذا سأل عن السعر، استخرجه بدقة من القائمة أدناه. إذا لم يكن المنتج في القائمة، قل أنك ستتأكد وتعود إليه.
-    5. **الأسلوب:** لا تكن ثرثاراً مثل الروبوت. كن عملياً ومباشراً. أعط السعر والمعلومة فوراً.
+    التعليمات:
+    1. لهجتك جزائرية، مهذبة، ومختصرة.
+    2. الورشة تبيع **بالجملة فقط** (Gros). ارفض البيع بالتجزئة (Detail) بلباقة.
+    3. اعتمد على القائمة أدناه للأسعار.
+    4. إذا المنتج غير موجود، قل: "ماكانش متوفر حالياً".
     
-    البيانات الحالية للمخزون والأسعار:
-    {inventory}
+    المخزون:
+    {inventory_data}
     """
 
     try:
-        chat_completion = client.chat.completions.create(
+        completion = client.chat.completions.create(
+            # 👇 تم تحديث الموديل هنا إلى النسخة الشغالة
+            model="llama-3.3-70b-versatile",
             messages=[
-                {
-                    "role": "system",
-                    "content": system_instruction
-                },
-                {
-                    "role": "user",
-                    "content": user_text
-                }
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_text}
             ],
-            model="llama3-70b-8192", # هذا الموديل ممتاز ويدعم العربية واللهجات بقوة
-            temperature=0.3, # درجة حرارة منخفضة ليكون دقيقاً في الأسعار ولا يؤلف
-            max_tokens=200,  # ردود قصيرة ومفيدة
+            temperature=0.3, # ليكون دقيقاً في الأسعار
+            max_tokens=250,  # طول الرد
         )
-        return chat_completion.choices[0].message.content
+        return completion.choices[0].message.content
     except Exception as e:
-        print(f"❌ Error Groq: {e}")
-        return "اسمحلنا خويا، كاين ضغط على الشبكة، عاود ابعثلي درك نجاوبك."
+        # طباعة الخطأ الحقيقي في السجلات لنعرف السبب
+        print(f"❌ Groq API Error: {e}")
+        
+        # رسالة لطيفة للزبون بدل الخطأ التقني
+        return "اسمحلنا خويا، كاين ضغط صغير، عاود ابعثلي درك نجاوبك."
 
 def send_fb_message(recipient_id, text):
     """إرسال الرد إلى ماسنجر"""
@@ -101,17 +103,19 @@ def send_fb_message(recipient_id, text):
     try:
         r = requests.post(url, json=payload)
         if r.status_code != 200:
-            print(f"⚠️ FB Send Error: {r.text}")
+            print(f"⚠️ فشل إرسال الرسالة: {r.text}")
     except Exception as e:
-        print(f"⚠️ Connection Error: {e}")
+        print(f"⚠️ خطأ اتصال بفيسبوك: {e}")
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
+    # التحقق من الـ Token (لربط فيسبوك أول مرة)
     if request.method == 'GET':
         if request.args.get("hub.verify_token") == VERIFY_TOKEN:
             return request.args.get("hub.challenge")
         return "Verification Failed", 403
 
+    # استقبال الرسائل
     if request.method == 'POST':
         try:
             data = request.json
@@ -119,16 +123,16 @@ def webhook():
                 for entry in data['entry']:
                     for event in entry.get('messaging', []):
                         if 'message' in event and 'text' in event['message']:
-                            sid = event['sender']['id']
-                            msg = event['message']['text']
+                            sender_id = event['sender']['id']
+                            message_text = event['message']['text']
                             
-                            # لا ترد على رسائلك الخاصة (echo)
+                            # تجاهل رسائل البوت نفسه (Echo)
                             if event['message'].get('is_echo'):
                                 continue
                                 
-                            # معالجة الرد
-                            reply = ask_groq(msg)
-                            send_fb_message(sid, reply)
+                            # الحصول على الرد وإرساله
+                            reply = ask_groq(message_text)
+                            send_fb_message(sender_id, reply)
             return "ok", 200
         except Exception:
             traceback.print_exc()
