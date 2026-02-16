@@ -1,5 +1,5 @@
 flask
 requests
 pandas
-google-generativeai
+groq
 gunicorn
